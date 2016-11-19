@@ -49,7 +49,12 @@ implements Runnable
   
   private static final Logger LOG = Logger.getLogger (UdpTnoTcpClientServer.class.getName ());
 
-
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //
+  // CONSTRUCTOR(S) / CLONING / FACTORY
+  //
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  
   public UdpTnoTcpClientServer (final OperationalBtpSap btpSap, final UdpTnoClient client, final Socket clientTcpSocket)
   {
     if (btpSap == null || client == null || clientTcpSocket == null)
@@ -157,364 +162,52 @@ implements Runnable
     shutdown ();
   }
     
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //
+  // CLI [MAIN PARSER]
+  //
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
   private void cli (final String commandString, final PrintWriter out)
-  throws IOException
   { 
     if (commandString == null)
       throw new IllegalArgumentException ();
-    System.err.println ("COMMAND: " + commandString + ".");
+    LOG.log (Level.INFO, "Command: {0}.", commandString);
     final String splitTextFromClient[] = commandString.trim ().split ("\\s+");
-    if (splitTextFromClient.length > 0 && !splitTextFromClient[0].trim ().isEmpty ())
+    if (splitTextFromClient.length > 0 && ! splitTextFromClient[0].trim ().isEmpty ())
     {
       final String command = splitTextFromClient[0];
       switch (command.toLowerCase ())
       {
         case "help":
-          out.println ("help                                   - Show this help.");
-          out.println ("client_id                              - Print client identification.");
-          out.println ("show_units                             - Show all available units; numbering starts with unity.");
-          out.println ("tc_req_routing                         - Show Traffic-Class based Request Routing (table).");
-          out.println ("tc_req_routing_global                  - "
-            + "Show Traffic-Class based Request Routing (table) for all clients (priviliged).");
-          out.println ("tc_req_routing <tcLow> <tcHigh> <unit> - "
-            + "Add unit to TC-based Request Routing for given TC range (inclusive).");
-          out.println ("tc_req_routing clear [<unit|*>]        - Clear TC-based Routing for all units (or for given unit).");
-          out.println ("ind_routing                            - Show Indication Routing.");
-          out.println ("ind_routing_global                     - Show Indication Routing for all clients (priviliged).");
-          out.println ("receive <unit|*> url                   - "
-            + "Send indications from given unit (or all units) to given URL (udp://<address:port>).");
-          out.println ("close <unit|*>                         - Stop sending indications from given unit (or all units).");
-          out.println ("exit                                   - Exit as client.");
+          cli_help (splitTextFromClient, out);
           break;
-        case ("client_id"):
-          out.println ("client " + this.btpSap.getClientId (this.client));
+        case "client_id":
+          cli_client_id (splitTextFromClient, out);
           break;
-        case ("show_units"):
-        {
-          final ArrayList<BtpSapServer> servers = new ArrayList<> (this.btpSap.getDb ().getServers ());
-          int i = 1;
-          for (final BtpSapServer server: servers)
-          {
-            out.println ("" + i++ + "\t" + server);
-          }
+        case "show_units":
+          cli_show_units (splitTextFromClient, out);
           break;
-        }
-        case ("tc_req_routing"):
-        {
-          if (splitTextFromClient.length == 1)
-          {
-            final NavigableMap<Integer, Set<BtpSapServer>> tcRequestRouting_client
-              = this.btpSap.getDb ().getTcRequestRouting (this.client);
-            if (tcRequestRouting_client == null)
-              out.println ("$$ * -> DROP.");
-            else
-            {
-              int prevKey = 0;
-              Set<BtpSapServer> prevSet = Collections.emptySet ();
-              for (final Entry<Integer, Set<BtpSapServer>> entry : tcRequestRouting_client.entrySet ())
-              {
-                if (prevSet != null && ! prevSet.isEmpty ())
-                  out.println ("$$ [" + prevKey + ", " + (entry.getKey () - 1) + "] -> " + prevSet + ".");
-                else if (prevKey != 0 || entry.getKey () != 0)
-                  out.println ("$$ [" + prevKey + ", " + (entry.getKey () - 1) + "] -> DROP.");                  
-                prevKey = entry.getKey ();
-                prevSet = entry.getValue ();
-              }
-              if (prevKey < 64)
-                out.println ("$$ [" + prevKey + ", " + 63 + "] -> DROP.");
-            }
-          }
-          else if (splitTextFromClient.length == 2 && "clear".equalsIgnoreCase (splitTextFromClient[1].trim ()))
-          {
-            this.btpSap.getDb ().clearTcRequestRouting (this.client);
-          }
-          else if (splitTextFromClient.length == 3 && "clear".equalsIgnoreCase (splitTextFromClient[1].trim ()))
-          {
-            final String unitSpecString = splitTextFromClient[2].trim ();
-            final BtpSapServer unit;
-            if ("*".equals (unitSpecString))
-              unit = null;
-            else
-            {
-              final ArrayList<BtpSapServer> servers = new ArrayList<> (this.btpSap.getDb ().getServers ());
-              final int unitNr;
-              try
-              {
-                unitNr = Integer.parseInt (unitSpecString);
-              }
-              catch (NumberFormatException nfe)
-              {
-                out.println ("$$ Illegal unit specification: " + unitSpecString + "!");
-                break;
-              }
-              if (unitNr < 1 || unitNr > servers.size ())
-              {
-                out.println ("$$ Illegal unit number (out of range): " + unitNr + "!");
-                break;
-              }
-              unit = servers.get (unitNr - 1);
-            }
-            if (unit == null)
-              this.btpSap.getDb ().clearTcRequestRouting (this.client);
-            else
-              this.btpSap.getDb ().clearTcRequestRouting (this.client, unit);
-          }
-          else if (splitTextFromClient.length == 4)
-          {
-            final String tcLowString = splitTextFromClient[1];
-            final String tcHighString = splitTextFromClient[2];
-            final String unitSpecString = splitTextFromClient[3];
-            final int tcLow;
-            try
-            {
-              tcLow = Integer.parseInt (tcLowString);
-            }
-            catch (NumberFormatException nfe)
-            {
-              out.println ("$$ Illegal traffic-class specification: " + tcLowString + "!");
-              break;
-            }
-            if (tcLow < 0 || tcLow >= 64)
-            {
-              out.println ("$$ Illegal traffic-class specification (out of [0, 63] range): " + tcLowString + "!");
-              break;
-            }
-            final int tcHigh;
-            try
-            {
-              tcHigh = Integer.parseInt (tcHighString);
-            }
-            catch (NumberFormatException nfe)
-            {
-              out.println ("$$ Illegal traffic-class specification: " + tcHighString + "!");
-              break;
-            }
-            if (tcHigh < 0 || tcHigh >= 64)
-            {
-              out.println ("$$ Illegal traffic-class specification (out of [0, 63] range): " + tcHighString + "!");
-              break;
-            }
-            if (tcLow > tcHigh)
-            {
-              out.println ("$$ Illegal traffic-class range specification (upper boundary is stricly smaller than lower boundary): "
-                + "[" + tcLowString + ", " + tcHighString + "]!");
-              break;
-            }            
-            final int unitNr;
-            try
-            {
-              unitNr = Integer.parseInt (unitSpecString);
-            }
-            catch (NumberFormatException nfe)
-            {
-              out.println ("$$ Illegal unit specification: " + unitSpecString + "!");
-              break;
-            }
-            final ArrayList<BtpSapServer> servers = new ArrayList<> (this.btpSap.getDb ().getServers ());
-            if (unitNr < 1 || unitNr > servers.size ())
-            {
-              out.println ("$$ Illegal unit number (out of range): " + unitNr + "!");
-              break;
-            }
-            final BtpSapServer unit = servers.get (unitNr - 1);
-            this.btpSap.getDb ().addTcRequestRouting (this.client, tcLow, tcHigh + 1, unit);
-          }
-          else
-          {
-            out.println ("$$ Illegal parameters!");
-          }
+        case "tc_req_routing":
+          cli_tc_req_routing (splitTextFromClient, out);
           break;
-        }
-        case ("tc_req_routing_global"):
-        {
-          final Map<BtpSapClient, NavigableMap<Integer, Set<BtpSapServer>>> tcRequestRouting
-            = this.btpSap.getDb ().getTcRequestRouting ();
-          if (tcRequestRouting == null || tcRequestRouting.containsKey (null))
-            throw new IllegalArgumentException ();
-          for (final BtpSapClient client : tcRequestRouting.keySet ())
-          {
-            out.println ("$$ client: " + client + " [" + this.btpSap.getClientId (client) + "]");
-            final NavigableMap<Integer, Set<BtpSapServer>> tcRequestRouting_client
-              = this.btpSap.getDb ().getTcRequestRouting (this.client);
-            if (tcRequestRouting_client == null)
-              out.println ("$$   * -> DROP.");
-            else
-            {
-              int prevKey = 0;
-              Set<BtpSapServer> prevSet = Collections.emptySet ();
-              for (final Entry<Integer, Set<BtpSapServer>> entry : tcRequestRouting_client.entrySet ())
-              {
-                if (prevSet != null && ! prevSet.isEmpty ())
-                  out.println ("$$   [" + prevKey + ", " + (entry.getKey () - 1) + "] -> " + prevSet + ".");
-                else if (prevKey != 0 || entry.getKey () != 0)
-                  out.println ("$$   [" + prevKey + ", " + (entry.getKey () - 1) + "] -> DROP.");                  
-                prevKey = entry.getKey ();
-                prevSet = entry.getValue ();
-              }
-              if (prevKey < 64)
-                out.println ("$$   [" + prevKey + ", " + 63 + "] -> DROP.");
-            }
-          }
+        case "tc_req_routing_global":
+          cli_tc_req_routing_global (splitTextFromClient, out);
           break;
-        }
-        case ("receive"):
-        {
-          if (splitTextFromClient.length == 3)
-          {
-            final ArrayList<BtpSapServer> servers = new ArrayList<> (this.btpSap.getDb ().getServers ());
-            final String unitSpecString = splitTextFromClient[1].trim ();
-            final String urlString = splitTextFromClient[2].trim ().toLowerCase ();
-            final BtpSapServer unit;
-            if ("*".equals (unitSpecString))
-              unit = null;
-            else
-            {
-              final int unitNr;
-              try
-              {
-                unitNr = Integer.parseInt (unitSpecString);
-              }
-              catch (NumberFormatException nfe)
-              {
-                out.println ("$$ Illegal unit specification: " + unitSpecString + "!");
-                break;
-              }
-              if (unitNr < 1 || unitNr > servers.size ())
-              {
-                out.println ("$$ Illegal unit number (out of range): " + unitNr + "!");
-                break;
-              }
-              unit = servers.get (unitNr - 1);
-            }
-            if (urlString.startsWith ("udp://"))
-            {
-              final String addressPortString = urlString.substring (6);
-              if (! addressPortString.contains (":"))
-              {
-                out.println ("$$ Illegal url: " + urlString + "!");
-                break;
-              }
-              final String[] addressPortStringSplit = addressPortString.split (":");
-              if (addressPortStringSplit.length != 2)
-              {
-                out.println ("$$ Illegal url: " + urlString + "!");
-                break;
-              }
-              final String addressString = addressPortStringSplit[0];
-              final String portString = addressPortStringSplit[1];
-              final int port;
-              try
-              {
-                port = Integer.parseInt (portString);
-              }
-              catch (NumberFormatException nfe)
-              {
-                out.println ("$$ Illegal url: " + urlString + "!");
-                break;
-              }
-              if (port < 0 || port >= 65536)
-              {
-                out.println ("$$ Illegal port number (out of range): " + port + "!");
-                break;
-              }
-              this.btpSap.getDb ().setIndicationRouting (this.client, unit, urlString);
-            }
-            else
-            {
-              out.println ("$$ Illegal url: " + urlString + "!");
-              break;
-            }
-          }
-          else
-          {
-            out.println ("$$ Illegal number of parameters (requires 2)!");
-          }
+        case "receive":
+          cli_receive (splitTextFromClient, out);
           break;
-        }
-        case ("close"):
-          if (splitTextFromClient.length == 2)
-          {
-            final ArrayList<BtpSapServer> servers = new ArrayList<> (this.btpSap.getDb ().getServers ());
-            final String unitSpecString = splitTextFromClient[1].trim ();
-            final BtpSapServer unit;
-            if ("*".equals (unitSpecString))
-              unit = null;
-            else
-            {
-              final int unitNr;
-              try
-              {
-                unitNr = Integer.parseInt (unitSpecString);
-              }
-              catch (NumberFormatException nfe)
-              {
-                out.println ("$$ Illegal unit specification: " + unitSpecString + "!");
-                break;
-              }
-              if (unitNr < 1 || unitNr > servers.size ())
-              {
-                out.println ("$$ Illegal unit number (out of range): " + unitNr + "!");
-                break;
-              }
-              unit = servers.get (unitNr - 1);
-            }
-            if (unit == null)
-              this.btpSap.getDb ().removeIndicationRouting (this.client);
-            else
-              this.btpSap.getDb ().setIndicationRouting (this.client, unit, null);
-          }
-          else
-            out.println ("$$ Illegal number of parameters (requires 1)!");
+        case "close":
+          cli_close (splitTextFromClient, out);
           break;
-        case ("ind_routing"):
-        {
-          final Map<BtpSapServer, String> indicationRouting_client = this.btpSap.getDb ().getIndicationRouting (this.client);
-          if (indicationRouting_client == null)
-            out.println ("$$ * -> DROP.");
-          else
-          {
-            for (final BtpSapServer unit : indicationRouting_client.keySet ())
-              if (unit != null)
-              {
-                final String targetString =
-                  ((indicationRouting_client.get (unit) == null) ? "DROP" : indicationRouting_client.get (unit));
-                out.println ("$$ " + unit + " -> " + targetString + ".");
-              }
-            if (indicationRouting_client.containsKey (null))
-              out.println ("$$ * -> " + indicationRouting_client.get (null) + ".");
-          }
+        case "ind_routing":
+          cli_ind_routing (splitTextFromClient, out);
           break;
-        }
-        case ("ind_routing_global"):
-        {
-          final Map<BtpSapClient, Map<BtpSapServer, String>> indicationRouting
-            = this.btpSap.getDb ().getIndicationRouting ();
-          if (indicationRouting == null || indicationRouting.containsKey (null))
-            throw new IllegalArgumentException ();
-          for (final BtpSapClient client : indicationRouting.keySet ())
-          {
-            out.println ("$$ client: " + client + " [" + this.btpSap.getClientId (client) + "]");
-            final Map<BtpSapServer, String> indicationRouting_client = this.btpSap.getDb ().getIndicationRouting (client);
-            if (indicationRouting_client == null)
-              out.println ("$$   * -> DROP.");
-            else
-            {
-              for (final BtpSapServer unit : indicationRouting_client.keySet ())
-                if (unit != null)
-                {
-                  final String targetString =
-                    ((indicationRouting_client.get (unit) == null) ? "DROP" : indicationRouting_client.get (unit));
-                  out.println ("$$ " + unit + " -> " + targetString + ".");
-                }
-              if (indicationRouting_client.containsKey (null))
-                out.println ("$$   * -> " + indicationRouting_client.get (null) + ".");
-            }
-          }
+        case "ind_routing_global":
+          cli_ind_routing_global (splitTextFromClient, out);
           break;
-        }
         case "exit":
-          out.println ("$$ Exiting!");
-          this.clientTcpSocket.close ();
+          cli_exit (splitTextFromClient, out);
           break;
         default:
           out.println ("$$ Unknown command " + command + "!");
@@ -523,4 +216,414 @@ implements Runnable
     }
   }
 
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //
+  // CLI ['help']
+  //
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  private void cli_help (final String[] splitTextFromClient, final PrintWriter out)
+  {
+    out.println ("help                                   - Show this help.");
+    out.println ("client_id                              - Print client identification.");
+    out.println ("show_units                             - Show all available units; numbering starts with unity.");
+    out.println ("tc_req_routing                         - Show Traffic-Class based Request Routing (table).");
+    out.println ("tc_req_routing_global                  - "
+      + "Show Traffic-Class based Request Routing (table) for all clients (priviliged).");
+    out.println ("tc_req_routing <tcLow> <tcHigh> <unit> - "
+      + "Add unit to TC-based Request Routing for given TC range (inclusive).");
+    out.println ("tc_req_routing clear [<unit|*>]        - Clear TC-based Routing for all units (or for given unit).");
+    out.println ("ind_routing                            - Show Indication Routing.");
+    out.println ("ind_routing_global                     - Show Indication Routing for all clients (priviliged).");
+    out.println ("receive <unit|*> url                   - "
+      + "Send indications from given unit (or all units) to given URL (udp://<address:port>).");
+    out.println ("close <unit|*>                         - Stop sending indications from given unit (or all units).");
+    out.println ("exit                                   - Exit as client.");
+  }
+  
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //
+  // CLI ['client_id']
+  //
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  private void cli_client_id (final String[] splitTextFromClient, final PrintWriter out)
+  {
+    out.println ("client " + this.btpSap.getClientId (this.client));
+  }
+  
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //
+  // CLI ['show_units']
+  //
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  private void cli_show_units (final String[] splitTextFromClient, final PrintWriter out)
+  {
+    final ArrayList<BtpSapServer> servers = new ArrayList<> (this.btpSap.getDb ().getServers ());
+    int i = 1;
+    for (final BtpSapServer server: servers)
+      out.println ("" + i++ + "\t" + server);
+  }
+
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //
+  // CLI ['tc_req_routing']
+  //
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  private void cli_tc_req_routing (final String[] splitTextFromClient, final PrintWriter out)
+  {
+    if (splitTextFromClient.length == 1)
+    {
+      final NavigableMap<Integer, Set<BtpSapServer>> tcRequestRouting_client
+        = this.btpSap.getDb ().getTcRequestRouting (this.client);
+      if (tcRequestRouting_client == null)
+        out.println ("$$ * -> DROP.");
+      else
+      {
+        int prevKey = 0;
+        Set<BtpSapServer> prevSet = Collections.emptySet ();
+        for (final Entry<Integer, Set<BtpSapServer>> entry : tcRequestRouting_client.entrySet ())
+        {
+          if (prevSet != null && ! prevSet.isEmpty ())
+            out.println ("$$ [" + prevKey + ", " + (entry.getKey () - 1) + "] -> " + prevSet + ".");
+          else if (prevKey != 0 || entry.getKey () != 0)
+            out.println ("$$ [" + prevKey + ", " + (entry.getKey () - 1) + "] -> DROP.");                  
+          prevKey = entry.getKey ();
+          prevSet = entry.getValue ();
+        }
+        if (prevKey < 64)
+          out.println ("$$ [" + prevKey + ", " + 63 + "] -> DROP.");
+      }
+    }
+    else if (splitTextFromClient.length == 2 && "clear".equalsIgnoreCase (splitTextFromClient[1].trim ()))
+      this.btpSap.getDb ().clearTcRequestRouting (this.client);
+    else if (splitTextFromClient.length == 3 && "clear".equalsIgnoreCase (splitTextFromClient[1].trim ()))
+    {
+      final String unitSpecString = splitTextFromClient[2].trim ();
+      final BtpSapServer unit;
+      if ("*".equals (unitSpecString))
+        unit = null;
+      else
+      {
+        final ArrayList<BtpSapServer> servers = new ArrayList<> (this.btpSap.getDb ().getServers ());
+        final int unitNr;
+        try
+        {
+          unitNr = Integer.parseInt (unitSpecString);
+        }
+        catch (NumberFormatException nfe)
+        {
+          out.println ("$$ Illegal unit specification: " + unitSpecString + "!");
+          return;
+        }
+        if (unitNr < 1 || unitNr > servers.size ())
+        {
+          out.println ("$$ Illegal unit number (out of range): " + unitNr + "!");
+          return;
+        }
+        unit = servers.get (unitNr - 1);
+      }
+      if (unit == null)
+        this.btpSap.getDb ().clearTcRequestRouting (this.client);
+      else
+        this.btpSap.getDb ().clearTcRequestRouting (this.client, unit);
+    }
+    else if (splitTextFromClient.length == 4)
+    {
+      final String tcLowString = splitTextFromClient[1];
+      final String tcHighString = splitTextFromClient[2];
+      final String unitSpecString = splitTextFromClient[3];
+      final int tcLow;
+      try
+      {
+        tcLow = Integer.parseInt (tcLowString);
+      }
+      catch (NumberFormatException nfe)
+      {
+        out.println ("$$ Illegal traffic-class specification: " + tcLowString + "!");
+        return;
+      }
+      if (tcLow < 0 || tcLow >= 64)
+      {
+        out.println ("$$ Illegal traffic-class specification (out of [0, 63] range): " + tcLowString + "!");
+        return;
+      }
+      final int tcHigh;
+      try
+      {
+        tcHigh = Integer.parseInt (tcHighString);
+      }
+      catch (NumberFormatException nfe)
+      {
+        out.println ("$$ Illegal traffic-class specification: " + tcHighString + "!");
+        return;
+      }
+      if (tcHigh < 0 || tcHigh >= 64)
+      {
+        out.println ("$$ Illegal traffic-class specification (out of [0, 63] range): " + tcHighString + "!");
+        return;
+      }
+      if (tcLow > tcHigh)
+      {
+        out.println ("$$ Illegal traffic-class range specification (upper boundary is stricly smaller than lower boundary): "
+          + "[" + tcLowString + ", " + tcHighString + "]!");
+        return;
+      }
+      final int unitNr;
+      try
+      {
+        unitNr = Integer.parseInt (unitSpecString);
+      }
+      catch (NumberFormatException nfe)
+      {
+        out.println ("$$ Illegal unit specification: " + unitSpecString + "!");
+        return;
+      }
+      final ArrayList<BtpSapServer> servers = new ArrayList<> (this.btpSap.getDb ().getServers ());
+      if (unitNr < 1 || unitNr > servers.size ())
+      {
+        out.println ("$$ Illegal unit number (out of range): " + unitNr + "!");
+        return;
+      }
+      final BtpSapServer unit = servers.get (unitNr - 1);
+      this.btpSap.getDb ().addTcRequestRouting (this.client, tcLow, tcHigh + 1, unit);
+    }
+    else
+      out.println ("$$ Illegal parameters!");
+  }
+
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //
+  // CLI ['tc_req_routing_global']
+  //
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  private void cli_tc_req_routing_global (final String[] splitTextFromClient, final PrintWriter out)
+  {
+    final Map<BtpSapClient, NavigableMap<Integer, Set<BtpSapServer>>> tcRequestRouting
+      = this.btpSap.getDb ().getTcRequestRouting ();
+    if (tcRequestRouting == null || tcRequestRouting.containsKey (null))
+      // XXX This is not nice...
+      throw new IllegalArgumentException ();
+    for (final BtpSapClient client: tcRequestRouting.keySet ())
+    {
+      out.println ("$$ client: " + client + " [" + this.btpSap.getClientId (client) + "]");
+      final NavigableMap<Integer, Set<BtpSapServer>> tcRequestRouting_client
+        = this.btpSap.getDb ().getTcRequestRouting (this.client);
+      if (tcRequestRouting_client == null)
+        out.println ("$$   * -> DROP.");
+      else
+      {
+        int prevKey = 0;
+        Set<BtpSapServer> prevSet = Collections.emptySet ();
+        for (final Entry<Integer, Set<BtpSapServer>> entry: tcRequestRouting_client.entrySet ())
+        {
+          if (prevSet != null && !prevSet.isEmpty ())
+            out.println ("$$   [" + prevKey + ", " + (entry.getKey () - 1) + "] -> " + prevSet + ".");
+          else if (prevKey != 0 || entry.getKey () != 0)
+            out.println ("$$   [" + prevKey + ", " + (entry.getKey () - 1) + "] -> DROP.");
+          prevKey = entry.getKey ();
+          prevSet = entry.getValue ();
+        }
+        if (prevKey < 64)
+          out.println ("$$   [" + prevKey + ", " + 63 + "] -> DROP.");
+      }
+    }
+  }
+  
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //
+  // CLI ['ind_routing']
+  //
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  private void cli_ind_routing (final String[] splitTextFromClient, final PrintWriter out)
+  {
+    final Map<BtpSapServer, String> indicationRouting_client = this.btpSap.getDb ().getIndicationRouting (this.client);
+    if (indicationRouting_client == null)
+      out.println ("$$ * -> DROP.");
+    else
+    {
+      for (final BtpSapServer unit: indicationRouting_client.keySet ())
+        if (unit != null)
+        {
+          final String targetString
+            = ((indicationRouting_client.get (unit) == null) ? "DROP" : indicationRouting_client.get (unit));
+          out.println ("$$ " + unit + " -> " + targetString + ".");
+        }
+      if (indicationRouting_client.containsKey (null))
+        out.println ("$$ * -> " + indicationRouting_client.get (null) + ".");
+    }
+  }
+  
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //
+  // CLI ['ind_routing_global']
+  //
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  private void cli_ind_routing_global (final String[] splitTextFromClient, final PrintWriter out)
+  {
+    final Map<BtpSapClient, Map<BtpSapServer, String>> indicationRouting
+      = this.btpSap.getDb ().getIndicationRouting ();
+    if (indicationRouting == null || indicationRouting.containsKey (null))
+      throw new IllegalArgumentException ();
+    for (final BtpSapClient client: indicationRouting.keySet ())
+    {
+      out.println ("$$ client: " + client + " [" + this.btpSap.getClientId (client) + "]");
+      final Map<BtpSapServer, String> indicationRouting_client = this.btpSap.getDb ().getIndicationRouting (client);
+      if (indicationRouting_client == null)
+        out.println ("$$   * -> DROP.");
+      else
+      {
+        for (final BtpSapServer unit: indicationRouting_client.keySet ())
+        {
+          if (unit != null)
+          {
+            final String targetString
+              = ((indicationRouting_client.get (unit) == null) ? "DROP" : indicationRouting_client.get (unit));
+            out.println ("$$ " + unit + " -> " + targetString + ".");
+          }
+        }
+        if (indicationRouting_client.containsKey (null))
+          out.println ("$$   * -> " + indicationRouting_client.get (null) + ".");
+      }
+    }
+  }
+  
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //
+  // CLI ['receive']
+  //
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  private void cli_receive (final String[] splitTextFromClient, final PrintWriter out)
+  {
+    if (splitTextFromClient.length == 3)
+    {
+      final ArrayList<BtpSapServer> servers = new ArrayList<> (this.btpSap.getDb ().getServers ());
+      final String unitSpecString = splitTextFromClient[1].trim ();
+      final String urlString = splitTextFromClient[2].trim ().toLowerCase ();
+      final BtpSapServer unit;
+      if ("*".equals (unitSpecString))
+        unit = null;
+      else
+      {
+        final int unitNr;
+        try
+        {
+          unitNr = Integer.parseInt (unitSpecString);
+        }
+        catch (NumberFormatException nfe)
+        {
+          out.println ("$$ Illegal unit specification: " + unitSpecString + "!");
+          return;
+        }
+        if (unitNr < 1 || unitNr > servers.size ())
+        {
+          out.println ("$$ Illegal unit number (out of range): " + unitNr + "!");
+          return;
+        }
+        unit = servers.get (unitNr - 1);
+      }
+      if (urlString.startsWith ("udp://"))
+      {
+        final String addressPortString = urlString.substring (6);
+        if (! addressPortString.contains (":"))
+        {
+          out.println ("$$ Illegal url: " + urlString + "!");
+          return;
+        }
+        final String[] addressPortStringSplit = addressPortString.split (":");
+        if (addressPortStringSplit.length != 2)
+        {
+          out.println ("$$ Illegal url: " + urlString + "!");
+          return;
+        }
+        final String addressString = addressPortStringSplit[0];
+        final String portString = addressPortStringSplit[1];
+        final int port;
+        try
+        {
+          port = Integer.parseInt (portString);
+        }
+        catch (NumberFormatException nfe)
+        {
+          out.println ("$$ Illegal url: " + urlString + "!");
+          return;
+        }
+        if (port < 0 || port >= 65536)
+        {
+          out.println ("$$ Illegal port number (out of range): " + port + "!");
+          return;
+        }
+        this.btpSap.getDb ().setIndicationRouting (this.client, unit, urlString);
+      }
+      else
+      {
+        out.println ("$$ Illegal url: " + urlString + "!");
+        return;
+      }
+    }
+    else
+      out.println ("$$ Illegal number of parameters (requires 2)!");
+  }
+  
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //
+  // CLI ['close']
+  //
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  private void cli_close (final String[] splitTextFromClient, final PrintWriter out)
+  {
+    if (splitTextFromClient.length == 2)
+    {
+      final ArrayList<BtpSapServer> servers = new ArrayList<> (this.btpSap.getDb ().getServers ());
+      final String unitSpecString = splitTextFromClient[1].trim ();
+      final BtpSapServer unit;
+      if ("*".equals (unitSpecString))
+        unit = null;
+      else
+      {
+        final int unitNr;
+        try
+        {
+          unitNr = Integer.parseInt (unitSpecString);
+        }
+        catch (NumberFormatException nfe)
+        {
+          out.println ("$$ Illegal unit specification: " + unitSpecString + "!");
+          return;
+        }
+        if (unitNr < 1 || unitNr > servers.size ())
+        {
+          out.println ("$$ Illegal unit number (out of range): " + unitNr + "!");
+          return;
+        }
+        unit = servers.get (unitNr - 1);
+      }
+      if (unit == null)
+        this.btpSap.getDb ().removeIndicationRouting (this.client);
+      else
+        this.btpSap.getDb ().setIndicationRouting (this.client, unit, null);
+    }
+    else
+      out.println ("$$ Illegal number of parameters (requires 1)!");
+  }
+  
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //
+  // CLI ['exit']
+  //
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  private void cli_exit (final String[] splitTextFromClient, final PrintWriter out)
+  {
+    out.println ("$$ Exiting!");
+    shutdown ();
+  }
+  
 }

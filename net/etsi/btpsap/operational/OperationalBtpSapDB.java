@@ -204,7 +204,10 @@ implements BtpSapEntity.Listener
   public final synchronized void removeClient (final BtpSapClient client)
   {
     if (client == null || ! this.clients.contains (client))
-      throw new IllegalArgumentException ();
+    {
+      LOG.log (Level.WARNING, "Unknown or null client {0}.", client);
+      return;
+    }
     if (! this.clientIdMap.containsKey (client))
       throw new RuntimeException ();
     client.unregisterListener (this);
