@@ -29,16 +29,10 @@ import net.etsi.btpsap.operational.client.udp.tno.UdpTnoClientProtocolHandler;
 import net.etsi.btpsap.operational.server.avgn.local.AvgnLocalProtocolHandler;
 import net.etsi.btpsap.operational.server.avgn.local.AvgnLocalServer;
 import net.etsi.btpsap.operational.ui.OperationalBtpSapServerFrame;
-import net.gcdc.geonetworking.Address;
 import net.gcdc.geonetworking.LinkLayer;
 import net.gcdc.geonetworking.LinkLayerUdpToEthernet;
-import net.gcdc.geonetworking.LongPositionVector;
-import net.gcdc.geonetworking.Optional;
-import net.gcdc.geonetworking.Position;
-import net.gcdc.geonetworking.PositionProvider;
 import net.gcdc.geonetworking.StationConfig;
 import net.gcdc.geonetworking.gpsdclient.GpsdClient;
-import org.threeten.bp.Instant;
 
 /**
  *
@@ -54,6 +48,9 @@ public class AvgnLocal_UdpTno
     operationalBtpSapServer.registerServerProtocolHandler (new AvgnLocalProtocolHandler ());
     final UdpTnoClientProtocolHandler udpTnoClientProtocolHandler = new UdpTnoClientProtocolHandler (operationalBtpSapServer);
     operationalBtpSapServer.registerClientProtocolHandler (udpTnoClientProtocolHandler);
+    //
+    // Create the PositionProviders for GeoNetworking using gpsd [on localhost].
+    //
     GpsdClient cchGpsdClient = null;
     try
     {
@@ -74,6 +71,9 @@ public class AvgnLocal_UdpTno
       LOG.log (Level.WARNING, "Unable to open gpsd for SCH1 on localhost!");
       sch1GpsdClient = null;
     }
+    //
+    // Create the LinkLayer interfaces for GeoNetworking (using udp2eth/u2epy...).
+    //
     LinkLayer cchll = null;
     try
     {
@@ -94,28 +94,34 @@ public class AvgnLocal_UdpTno
       LOG.log (Level.WARNING, "Unable to open LinkLayer [udp2eth] for SCH1 on localhost!");
       sch1ll = null;
     }
-    // final BtpSapServer cchServer = new AvgnLocalServer (new StationConfig (), cchll, cchGpsdClient);
-    final BtpSapServer cchServer = new AvgnLocalServer (new StationConfig (), cchll, new PositionProvider ()
-    {
-      @Override
-      public LongPositionVector getLatestPosition ()
-      {
-        final Optional<Address> emptyAddress = Optional.empty ();
-        return new LongPositionVector (emptyAddress, Instant.now (), new Position (52.01, 4.35), true, 0, 0);
-      }
-    });
+    // Fire up the CCH GeoNetworking stack.
+    // Use this line for gps(d).
+    final BtpSapServer cchServer = new AvgnLocalServer (new StationConfig (), cchll, cchGpsdClient);
+    // Use the section below for a fixed position; independent of gps(d).
+//    final BtpSapServer cchServer = new AvgnLocalServer (new StationConfig (), cchll, new PositionProvider ()
+//    {
+//      @Override
+//      public LongPositionVector getLatestPosition ()
+//      {
+//        final Optional<Address> emptyAddress = Optional.empty ();
+//        return new LongPositionVector (emptyAddress, Instant.now (), new Position (52.01, 4.35), true, 0, 0);
+//      }
+//    });
     cchServer.setName (cchServer.getName () + "[CCH]");
     operationalBtpSapServer.registerServer (cchServer);
-    // final BtpSapServer sch1Server = new AvgnLocalServer (new StationConfig (), sch1ll, sch1GpsdClient);
-    final BtpSapServer sch1Server = new AvgnLocalServer (new StationConfig (), sch1ll, new PositionProvider ()
-    {
-      @Override
-      public LongPositionVector getLatestPosition ()
-      {
-        final Optional<Address> emptyAddress = Optional.empty ();
-        return new LongPositionVector (emptyAddress, Instant.now (), new Position (52.07, 4.38), true, 0, 0);
-      }
-    });
+    // Fire up the SCH1 GeoNetworking stack.
+    // Use this line for gps(d).
+    final BtpSapServer sch1Server = new AvgnLocalServer (new StationConfig (), sch1ll, sch1GpsdClient);
+    // Use the section below for a fixed position; independent of gps(d).
+//    final BtpSapServer sch1Server = new AvgnLocalServer (new StationConfig (), sch1ll, new PositionProvider ()
+//    {
+//      @Override
+//      public LongPositionVector getLatestPosition ()
+//      {
+//        final Optional<Address> emptyAddress = Optional.empty ();
+//        return new LongPositionVector (emptyAddress, Instant.now (), new Position (52.07, 4.38), true, 0, 0);
+//      }
+//    });
     sch1Server.setName (sch1Server.getName () + "[SCH1]");
     operationalBtpSapServer.registerServer (sch1Server);
     final boolean headless = true;
