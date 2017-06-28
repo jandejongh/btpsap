@@ -12,16 +12,16 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
  */
 package net.etsi.btpsap;
 
-/** Java binding to a BTP (Basic Transport Protocol) SAP (Service Access Point entity).
+/** Java binding for a BTP (Basic Transport Protocol) SAP (Service Access Point entity) Data Indication.
  *
  * <p>
- * This is the BTP-Data.indication part.
- * 
- * <p>
  * After ETSI EN 302 636-5-1, V1.2.1 (2014-08).
+ * 
+ * @author Jan de Jongh, TNO
  * 
  */
 public interface BtpSap_DataInd
@@ -53,6 +53,8 @@ extends BtpSapTypes
    * @param gnRemLifetime_s   The remaining lifetime of the packet in seconds (optional, may be null).
    * @param length            The number of bytes in the {@code data} buffer received (non-negative).
    * @param data              The bytes received as payload (starting at index zero and upto {@code length} bytes).
+   * 
+   * @throws IllegalArgumentException If one or more actual arguments has an illegal value.
    * 
    */
   void BTPDataIndication

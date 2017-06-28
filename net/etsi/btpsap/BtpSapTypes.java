@@ -12,18 +12,18 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
  */
 package net.etsi.btpsap;
 
 import java.util.Arrays;
 
-/** Java binding to a BTP (Basic Transport Protocol) SAP (Service Access Point entity).
+/** Java binding for common data types in a BTP (Basic Transport Protocol) SAP (Service Access Point entity).
  *
  * <p>
- * Basic types used in the SAP.
- * 
- * <p>
  * After ETSI EN 302 636-5-1, V1.2.1 (2014-08).
+ * 
+ * @author Jan de Jongh, TNO
  * 
  */
 public interface BtpSapTypes
