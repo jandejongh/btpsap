@@ -155,7 +155,12 @@ implements BtpSapServer
     if (this.btpSap == null)
     {
       this.btpSap = btpSap;
+      // Start the PositionProvider if it is Runnable; credits@ Bastiaan Wissingh, TNO.
+      if (this.positionProvider != null && (this.positionProvider instanceof Runnable))
+        // XXX Need thread admin and monitoring.
+        new Thread ((Runnable) this.positionProvider).start ();
       this.geonetStation = new GeonetStation (this.stationConfig, this.linkLayer, this.positionProvider);
+      // XXX Need thread admin and monitoring.
       new Thread (this.geonetStation).start ();
       this.geonetStation.startBecon ();
       this.btpSocket = BtpSocket.on (this.geonetStation);
@@ -176,7 +181,9 @@ implements BtpSapServer
       this.btpSap = null;
       this.btpSocket.close ();
       this.btpSocket = null;
+      // XXX How to stop the GeonetStation?
       this.geonetStation = null;
+      // XXX How to stop the PositionProvider?
     }
   }
 
